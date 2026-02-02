@@ -1,0 +1,62 @@
+Tasks
+What is a Task?
+
+A task is basically a function that never returns. It usually contains an infinite while(1) loop. Each task has its own:
+
+    Stack: A private slice of RAM for its local variables.
+
+    Priority: A number telling the CPU how important it is.
+
+    Handle: A reference ID used if you want to delete or pause the task later.
+
+2. The xTaskCreate Parameters
+
+This is the function that actually "spawns" the task. It has 6 essential arguments:
+C
+
+xTaskCreate(
+    task_function,      // 1. The name of the function to run
+    "Task_Name",        // 2. A string name for debugging
+    stack_size,         // 3. RAM allocated (usually 2048 or 4096 bytes)
+    parameter_to_pass,  // 4. Pointer to data you want to send into the task
+    priority,           // 5. Importance (Higher number = Higher priority)
+    &task_handle        // 6. Identifier to track the task (optional)
+);
+
+3. How "Invoking" Works (The Queue)
+
+In a standard C program, you "invoke" a function by calling its name. In an RTOS, you don't "call" a task—it’s already running! Instead, you synchronize or signal it.
+
+To have a "Send" task talk to a "Receive" task (as your mentor suggested), you use a Queue.
+
+    The Receiver Task calls xQueueReceive. If the queue is empty, the task "Blocks" (goes to sleep).
+
+    The Sender Task calls xQueueSend. This places data into the queue.
+
+    The "Invocation": The moment data enters the queue, the FreeRTOS scheduler automatically "wakes up" the Receiver Task to handle it.
+1. xQueueSend (The Producer)
+
+This is used by the task that has information to share.
+C
+
+xQueueSend(my_queue, &data_to_send, timeout);
+
+    How it works: It copies the data from the sender's local memory into the Queue's internal storage.
+
+    The "Block" (Timeout): If the pipe is full (e.g., you created a queue of size 5 and already sent 5 items), the sender task will actually stop running and wait for the time specified in timeout.
+
+    The Wake-up: As soon as the Receiver takes one item out, the Sender "wakes up" and shoves its data in.
+
+2. xQueueReceive (The Consumer)
+
+This is used by the task that is waiting to do work.
+C
+
+xQueueReceive(my_queue, &buffer_to_fill, timeout);
+
+    How it works: It looks at the pipe. If there is data, it copies the oldest item into buffer_to_fill and removes it from the pipe.
+
+    The "Block" (The most important part): If the pipe is empty, the task enters the Blocked State. It uses 0% CPU. It’s not "checking" the pipe over and over; the FreeRTOS scheduler simply puts the task to sleep.
+
+    The Wake-up: The very microsecond xQueueSend is called by another task, the scheduler instantly wakes up the Receiver to handle the data.
+    FreeRTOS Task Arguments (pvParameters): In xTaskCreate, the parameter pvParameters is a mandatory void* pointer that passes specific data (integer, float, or pointer to a struct) to the task, allowing it to function.
