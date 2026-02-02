@@ -60,3 +60,8 @@ xQueueReceive(my_queue, &buffer_to_fill, timeout);
 
     The Wake-up: The very microsecond xQueueSend is called by another task, the scheduler instantly wakes up the Receiver to handle the data.
     FreeRTOS Task Arguments (pvParameters): In xTaskCreate, the parameter pvParameters is a mandatory void* pointer that passes specific data (integer, float, or pointer to a struct) to the task, allowing it to functions.
+    Station Mode (STA): The ESP32 acts like your phone; it connects to an existing Wi-Fi router.
+
+Access Point Mode (AP): The ESP32 acts like a router; it creates its own Wi-Fi network that you can join with your phone.
+
+Station + AP (Dual Mode): It does both at the same time.
