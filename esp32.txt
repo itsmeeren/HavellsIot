@@ -59,4 +59,4 @@ xQueueReceive(my_queue, &buffer_to_fill, timeout);
     The "Block" (The most important part): If the pipe is empty, the task enters the Blocked State. It uses 0% CPU. It’s not "checking" the pipe over and over; the FreeRTOS scheduler simply puts the task to sleep.
 
     The Wake-up: The very microsecond xQueueSend is called by another task, the scheduler instantly wakes up the Receiver to handle the data.
-    FreeRTOS Task Arguments (pvParameters): In xTaskCreate, the parameter pvParameters is a mandatory void* pointer that passes specific data (integer, float, or pointer to a struct) to the task, allowing it to function.
+    FreeRTOS Task Arguments (pvParameters): In xTaskCreate, the parameter pvParameters is a mandatory void* pointer that passes specific data (integer, float, or pointer to a struct) to the task, allowing it to functions.
