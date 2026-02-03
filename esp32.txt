@@ -65,3 +65,231 @@ xQueueReceive(my_queue, &buffer_to_fill, timeout);
 Access Point Mode (AP): The ESP32 acts like a router; it creates its own Wi-Fi network that you can join with your phone.
 
 Station + AP (Dual Mode): It does both at the same time.
+AP MODE OF WIFI
+1. The "I am here" (Beaconing)
+
+Even before you touched your phone, the ESP32 started broadcasting Beacon Frames about every 100ms.
+
+    Process: The Wi-Fi radio wakes up, sends a small packet containing the SSID ("Gemini_ESP32_AP") and the security requirements (WPA2), then waits.
+
+    Result: This is why your phone can "see" the network in the Wi-Fi list without you doing anything.
+
+2. The Handshake (Authentication & Association)
+
+When you tapped the name and entered the password, the 802.11 4-Way Handshake began.
+
+    Step A (Probe): Your phone sends a "Probe Request." The ESP32 replies with a "Probe Response."
+
+    Step B (Auth): Your phone says, "I want to join." The ESP32 says, "Prove you have the password."
+
+    Step C (Key Exchange): They exchange mathematical tokens. The actual password is never sent over the air; they use it to generate a PTK (Pairwise Transient Key) to encrypt all future data.
+
+3. The "Name Tag" (DHCP Process)
+
+Once the radio connection is secure, your phone has a "pipe" to the ESP32, but it doesn't have an IP Address yet. This is where the TCP/IP Stack (LwIP) takes over.
+
+    Discovery: Your phone shouts, "Is there a DHCP server here? I need an IP!"
+
+    Offer: The ESP32 (acting as the DHCP Server) replies, "Yes, I am here. You can use 192.168.4.2."
+
+    Request/Ack: Your phone accepts it, and the ESP32 records your phone's MAC Address in its "Lease Table."
+
+4. The Bridge: From Radio to Code
+
+This is the part you see in your terminal.
+
+    The Driver: The physical Wi-Fi hardware detects the connection.
+
+    The Event Loop: The hardware posts an event: WIFI_EVENT_AP_STACONNECTED.
+
+    Your Code: Your wifi_event_handler function was waiting for that specific ID. It woke up, grabbed the MAC address from the event data, and printed it to your screen.
+
+5. Summary of the "Basics" for your Mentor
+
+If your mentor asks how the ESP32-C3 manages multiple phones, you can explain these three layers:
+
+TLS
+1. The Concepts You Must Know First
+
+Before we code, your mentor will definitely ask you these three things:
+
+    HTTP (Port 80): Data is sent in "Plain Text." If someone is "listening" to the Wi-Fi, they can see your passwords or data.
+
+    HTTPS (Port 443): This is HTTP inside a TLS tunnel. The data is encrypted.
+
+    TLS/SSL Certificates: How does the ESP32 know it is actually talking to "Google" and not a hacker? Google provides a Certificate (a digital ID). The ESP32 must check this certificate to "trust" the connection.
+
+2. Project Suggestion: The "Secure Fetch"
+
+Let’s have the ESP32 connect to an HTTPS website (like Google or a public API) and fetch the raw HTML or a JSON response.
+
+Why Google? Google uses very high security. If we can successfully fetch google.com over HTTPS, it proves your TLS stack is working perfectly.
+
+STA MODE
+1. The Logic of STA Mode
+
+Unlike AP mode where the ESP32 is the boss, in STA mode the ESP32 is "requesting" entry.
+
+    Init: Turn on the Wi-Fi hardware.
+
+    Config: Give it your Hotspot Name (SSID) and Password.
+
+    Wait for Connection: The hardware tries to find the hotspot.
+
+    Wait for IP: The hotspot's DHCP server assigns an address to the ESP32.
+
+    Ready: Now you can actually use the internet.
+3. What to check in your Hotspot
+
+    Band: Make sure your hotspot is set to 2.4 GHz. The ESP32-C3 does not support 5 GHz Wi-Fi.
+
+    Visibility: Ensure your hotspot isn't "Hidden" (though the code can handle it, it's easier to test when visible).
+
+    Connected Devices: Look at your phone’s hotspot screen—you should see a new device join (usually named espressif).
+
+4. Why is this code better than a simple "Connect" call?
+
+The Event Group (xEventGroupWaitBits) is the professional way to do it. It tells the app_main to "freeze" and wait efficiently without wasting CPU power until the Wi-Fi is actually ready. This ensures you don't try to send an HTTP request before you even have an IP.
+
+2️⃣ FULL EXECUTION FLOW (WHAT ACTUALLY HAPPENS)
+
+Let’s walk exactly like CPU does.
+
+🧠 BOOT
+
+ROM bootloader
+
+2nd stage bootloader
+
+FreeRTOS scheduler starts
+
+app_main() is called
+
+📡 STEP 1 — Wi-Fi STA MODE
+wifi_init_sta();
+
+
+What happens internally:
+
+TCP/IP stack initialized
+
+Wi-Fi driver loaded
+
+STA mode enabled
+
+ESP connects to AP
+
+DHCP assigns IP
+
+IP_EVENT_STA_GOT_IP fires
+
+EventGroup bit set → unblock app
+
+You already knew this part — good.
+
+⏱ STEP 2 — TIME SYNC (WHY THIS EXISTS)
+obtain_time_blocking();
+
+
+What happens:
+
+SNTP sends UDP packets to NTP server
+
+Receives UNIX time
+
+Sets system RTC clock
+
+Why required:
+
+TLS certificates have valid-from / valid-to dates
+
+If time = 1970
+➡ certificate looks invalid
+➡ TLS handshake fails
+➡ HTTPS fails
+
+🔐 STEP 3 — HTTPS / TLS
+https_task();
+
+
+Internal flow:
+
+DNS resolve (IPv4)
+
+TCP connection
+
+TLS handshake
+
+Certificate chain verification
+
+HTTP GET
+
+Response received
+
+Certificate validation uses:
+
+esp_crt_bundle_attach
+
+
+That’s Espressif’s built-in trusted CA store.
+
+
+Phase 1: The Foundation (NVS & Wi-Fi)
+
+    NVS Init: The Wi-Fi driver needs a place to store its internal "calibration" data and Wi-Fi credentials. If this fails, the radio won't even turn on.
+
+    STA Mode Init: You tell the chip: "You are a client, not a router."
+
+    Event Group: This is a flag. The main code stops at xEventGroupWaitBits and sleeps until the Wi-Fi background task waves the "I'm connected!" flag.
+
+    DHCP: Once connected to "Igris," your hotspot gives the ESP32 an IP address. This triggers the IP_EVENT_STA_GOT_IP, which flips the flag and lets the code continue.
+
+Phase 2: The Time Machine (SNTP)
+
+Why is this mandatory? HTTPS relies on Certificates. Every certificate has an "Issue Date" and an "Expiry Date."
+
+    When the ESP32 boots, its internal clock is January 1, 1970.
+
+    Google’s certificate says: "Valid from 2025 to 2026."
+
+    If you don't sync time, the ESP32 looks at the certificate and says: "This is from the future! I don't trust it." and throws the -0x3000 error.
+
+Process:
+
+    SNTP (Simple Network Time Protocol): The ESP32 sends a tiny packet to pool.ntp.org (a global network of atomic clocks).
+
+    Clock Set: The server sends back the current Unix timestamp. The ESP32 updates its internal RTC (Real Time Clock). Now the year is 2026.
+
+Phase 3: The TLS Handshake (The Secret Sauce)
+
+When esp_http_client_perform starts, the "Handshake" begins. This is the most complex part of the code.
+
+    TCP Connection: ESP32 opens a port (443) to Google.
+
+    Client Hello: ESP32 sends a list of encryption math it supports (like AES-256).
+
+    The Certificate Exchange: Google sends its Public Key and its Certificate.
+
+    Verification (The Bundle): This is where esp_crt_bundle_attach comes in. The ESP32 looks at Google's certificate and checks if it was signed by a "Root Authority" it knows. Since you enabled the bundle in menuconfig, the ESP32 has a "Master List" of trusted authorities. It sees Google is on the list and says: "Okay, you are really Google."
+
+    Key Exchange: They agree on a temporary "session key" that only they know. From this point on, everything is encrypted.
+
+Phase 4: The HTTP Request
+
+Now that the "Encrypted Tunnel" (TLS) is open, the ESP32 sends a standard HTTP GET request inside that tunnel: GET / HTTP/1.1 Host: google.com
+Phase 5: The Data Handler
+
+Google sends back a mountain of HTML data. Because this data is huge, the ESP-IDF doesn't give it to you all at once (which would crash the RAM). Instead:
+
+    It arrives in chunks.
+
+    Every time a chunk arrives, the http_event_handler is called.
+
+    Your code uses printf("%.*s", ...) to print that chunk to the screen immediately.
+
+Why these specific lines were necessary:
+Code Line	Why it's there
+esp_wifi_set_ps(WIFI_PS_NONE)	Critical for C3. Prevents the chip from missing Wi-Fi packets during the heavy math of the TLS handshake.
+esp_crt_bundle_attach	Connects the "Trust Database" to the request so you don't have to manually paste certificate files.
+obtain_time_blocking	Ensures the year is 2026 so the certificate dates match reality.
+xTaskCreate(..., 8192, ...)	TLS uses a lot of "Stack" memory for encryption math. 2048 is too small and would cause a crash.
